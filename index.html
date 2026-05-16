@@ -157,6 +157,7 @@
             border-radius: 9999px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+            white-space: nowrap;
         }
 
         .status-ended {
@@ -186,6 +187,18 @@
             padding: 0.2rem 0.6rem;
             border-radius: 6px;
             font-weight: 500;
+        }
+
+        .tag-model {
+            background-color: rgba(168, 85, 247, 0.15);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .tag-version {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
         }
 
         .card-footer {
@@ -298,6 +311,13 @@
         .chapter h3 {
             font-size: 1.25rem;
             color: var(--accent-hover);
+            margin-bottom: 0.5rem;
+        }
+
+        .chapter-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
             margin-bottom: 1rem;
         }
 
@@ -325,6 +345,76 @@
         }
         .chapter-meta strong {
             color: var(--text-primary);
+        }
+
+        .chapter-short-text {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(167, 139, 250, 0.08));
+            border: 1px solid rgba(167, 139, 250, 0.15);
+            border-radius: 10px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.25rem;
+            font-style: italic;
+            color: #e2e8f0;
+            line-height: 1.9;
+            position: relative;
+        }
+
+        .chapter-short-text::before {
+            content: '✦';
+            position: absolute;
+            top: -8px;
+            left: 16px;
+            background: var(--bg-color);
+            padding: 0 6px;
+            color: #a78bfa;
+            font-style: normal;
+            font-size: 0.85rem;
+        }
+
+        /* Toggle Characters Button */
+        .toggle-characters-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--accent-hover);
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 1rem;
+        }
+
+        .toggle-characters-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-color);
+        }
+
+        .toggle-characters-btn .arrow {
+            transition: transform 0.3s ease;
+            display: inline-block;
+            font-size: 0.65rem;
+        }
+
+        .toggle-characters-btn.expanded .arrow {
+            transform: rotate(90deg);
+        }
+
+        .characters-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+            opacity: 0;
+            margin-top: 0;
+        }
+
+        .characters-content.visible {
+            max-height: 500px;
+            opacity: 1;
+            margin-top: 0.75rem;
         }
 
         .loading {
@@ -461,7 +551,9 @@
                         genres: new Set(),
                         chapters: [],
                         isEnded: false,
-                        lastUpdated: new Date() // Giả lập nếu không có timestamp
+                        models: new Set(),
+                        promptVersions: new Set(),
+                        lastUpdated: new Date()
                     });
                 }
                 
@@ -478,16 +570,20 @@
                     if (Array.isArray(chapter.genre)) {
                         chapter.genre.forEach(g => story.genres.add(g));
                     } else if (typeof chapter.genre === 'string') {
-                        // Xử lý chuỗi cách nhau bằng dấu phẩy
                         chapter.genre.split(',').forEach(g => story.genres.add(g.trim()));
                     }
                 }
+
+                // Thu thập model & prompt_version
+                if (chapter.model) story.models.add(chapter.model);
+                if (chapter.prompt_version) story.promptVersions.add(chapter.prompt_version);
             });
             
             // Sắp xếp chương theo thứ tự
             storiesMap.forEach(story => {
-                // Hiện tại dựa vào thứ tự mảng gốc, có thể phức tạp hơn nếu cần
                 story.genresArray = Array.from(story.genres);
+                story.modelsArray = Array.from(story.models);
+                story.promptVersionsArray = Array.from(story.promptVersions);
             });
         }
 
@@ -567,8 +663,13 @@
                 const statusClass = story.isEnded ? 'status-ended' : 'status-progress';
                 const statusText = story.isEnded ? 'Hoàn thành' : 'Đang viết';
                 
+                // Genre tags
                 const tagsHtml = story.genresArray.slice(0, 3).map(g => `<span class="tag">${g}</span>`).join('');
                 const extraTags = story.genresArray.length > 3 ? `<span class="tag">+${story.genresArray.length - 3}</span>` : '';
+                
+                // Model & Version tags
+                const modelTags = story.modelsArray.map(m => `<span class="tag tag-model">🤖 ${m}</span>`).join('');
+                const versionTags = story.promptVersionsArray.map(v => `<span class="tag tag-version">v${v}</span>`).join('');
                 
                 card.innerHTML = `
                     <div class="card-header">
@@ -580,6 +681,8 @@
                     </div>
                     <div class="tags">
                         ${tagsHtml}${extraTags}
+                        ${modelTags}
+                        ${versionTags}
                     </div>
                     <div class="card-footer">
                         <span>${story.chapters.length} Chương</span>
@@ -603,27 +706,65 @@
                 const chDiv = document.createElement('div');
                 chDiv.className = 'chapter';
                 
-                let metaHtml = '';
-                if(chapter.characters || chapter.context) {
-                    metaHtml = `
-                        <div class="chapter-meta">
-                            ${chapter.characters ? `<div><strong>Nhân vật:</strong> ${chapter.characters}</div>` : ''}
-                            ${chapter.context ? `<div style="margin-top: 0.5rem"><strong>Bối cảnh:</strong> ${chapter.context}</div>` : ''}
+                // Chapter-level model & version tags
+                let chapterTagsHtml = '';
+                if (chapter.model || chapter.prompt_version) {
+                    chapterTagsHtml = '<div class="chapter-tags">';
+                    if (chapter.model) chapterTagsHtml += `<span class="tag tag-model">🤖 ${chapter.model}</span>`;
+                    if (chapter.prompt_version) chapterTagsHtml += `<span class="tag tag-version">v${chapter.prompt_version}</span>`;
+                    chapterTagsHtml += '</div>';
+                }
+
+                // Short text (intro/summary) - chỉ hiển thị khi không rỗng
+                let shortTextHtml = '';
+                if (chapter.short_text && chapter.short_text.trim() !== '') {
+                    shortTextHtml = `
+                        <div class="chapter-short-text">
+                            ${chapter.short_text}
+                        </div>
+                    `;
+                }
+
+                // Characters toggle (hidden by default)
+                let charactersHtml = '';
+                if (chapter.characters) {
+                    const toggleId = `char-toggle-${story.id}-${index}`;
+                    const contentId = `char-content-${story.id}-${index}`;
+                    charactersHtml = `
+                        <button class="toggle-characters-btn" onclick="toggleCharacters(event, '${toggleId}', '${contentId}')" id="${toggleId}">
+                            <span class="arrow">▶</span> Nhân vật
+                        </button>
+                        <div class="characters-content" id="${contentId}">
+                            <div class="chapter-meta">
+                                <strong>Nhân vật:</strong> ${chapter.characters}
+                            </div>
                         </div>
                     `;
                 }
 
                 chDiv.innerHTML = `
                     <h3>${chapter.chapter_name || `Chương ${index + 1}`}</h3>
+                    ${chapterTagsHtml}
+                    ${shortTextHtml}
                     <div class="chapter-content">${chapter.story_text || 'Không có nội dung'}</div>
                     ${chapter.hook ? `<div class="chapter-hook">${chapter.hook}</div>` : ''}
-                    ${metaHtml}
+                    ${charactersHtml}
                 `;
                 modalBody.appendChild(chDiv);
             });
             
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
+        }
+
+        // Toggle Characters visibility
+        function toggleCharacters(event, toggleId, contentId) {
+            event.stopPropagation();
+            const btn = document.getElementById(toggleId);
+            const content = document.getElementById(contentId);
+            
+            btn.classList.toggle('expanded');
+            content.classList.toggle('visible');
         }
 
         // Đóng Modal
